@@ -1,40 +1,39 @@
-# Fuzzing Exercise — Crash Discovery Harness (Draft / Proof of Concept)
+# Fuzzing Exercise
 
-**What this is.** A small, self-contained, containerized exercise for teaching the *first* step of vulnerability assessment: finding that a bug exists, before ever touching how it might be exploited. A student writes or extends a fuzzer, points it at a deliberately buggy target, and an automated checker independently confirms whether they actually found a real crash.
+This is a small exercise for learning the first useful step in fuzzing: finding out whether a program crashes on unexpected input.
 
-**What this deliberately is not.** There is no exploitation step here — no shellcode, no payload crafting, no attempt to turn the crash into controlled execution. The target's only job is to be crash-able; the fuzzer's job is to find that; the checker's job is to independently confirm it, not just trust the fuzzer's own report.
+The target program has a deliberately unchecked array index. The fuzzer generates inputs and saves the ones that make the target crash. The checker then runs those inputs again in separate target processes, so a result only counts when it can be reproduced.
+
+This stops at crash discovery. It does not include payloads, shellcode, or an attempt to turn the bug into code execution.
 
 ## Structure
 
 ```
-target/    the deliberately buggy program (an unchecked array index)
-fuzzer/    a basic mutation fuzzer that discovers the crash
-checker/   independently re-runs any candidate crash to confirm it's real
-Dockerfile reproducible environment for all of the above
+target/     the deliberately buggy program (an unchecked array index)
+fuzzer/     a basic mutation fuzzer that discovers the crash
+checker/    independently re-runs candidate crashes to confirm they are real
+Dockerfile  the reproducible environment for all of the above
 ```
 
-## Why built this way
+## A few design choices
 
-- **Reproducible, not "works on my machine"** — everything runs the same way in the container as anywhere else.
-- **The checker never trusts the fuzzer** — it re-executes every candidate input itself before counting it as a real finding. This is the same principle as any evaluation suite: don't assume something worked, build a separate way to verify it.
-- **The target is intentionally minimal and generic** — this is a proof of the *harness pattern*, not a finished course exercise. The actual bug class, difficulty curve, and learning objectives are exactly where your input would matter most — this was built to be a starting point for that conversation, not a replacement for it.
+- The target is intentionally small, so it is easy to see why an input crashes.
+- The checker does not trust the fuzzer's output. It opens each saved input and starts the target again.
+- Docker keeps the compiler, scripts, and commands in one place. That makes the exercise easier to run on another machine.
 
-## Running it
+## Run it with Docker
 
 ```bash
 docker build -t fuzzing-exercise .
 docker run --rm fuzzing-exercise
 ```
 
-Or without Docker:
+## Run it without Docker
+
 ```bash
 gcc -O0 -fno-stack-protector -o target/lookup target/lookup.c
 python3 fuzzer/fuzz.py --target target/lookup --iterations 2000 --seed 42 --out fuzzer/crashes
 python3 checker/verify.py --target target/lookup --crashes-dir fuzzer/crashes
 ```
 
-## Verified working (outside Docker; the container build itself wasn't testable in the environment this was built in)
-
-- Target compiles cleanly; confirmed it crashes on out-of-range input and behaves normally otherwise.
-- Fuzzer found 810 independently-reproducing crashes out of 2,000 iterations (seed 42).
-- Checker independently re-ran and confirmed all 810 as genuine.
+The last command is the important one: it independently checks the files saved by the fuzzer and reports how many reproduce a crash.
